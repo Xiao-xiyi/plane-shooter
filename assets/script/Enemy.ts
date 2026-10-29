@@ -2,6 +2,7 @@ import { _decorator, Animation, animation, AnimationClip, Collider2D, Component,
 import { GameStore } from './GameStore';
 import { AudioMgr } from './AudioMgr';
 import { player } from './player';
+import { ENEMY_TABLE, EnemyData } from './EnemyConfig';
 const { ccclass, property } = _decorator;
 
 
@@ -11,12 +12,10 @@ export class Enemy extends Component {
     anim: Animation = null
     @property
     speed: number = 30
-    @property({ tooltip: '1 号敌人血量' })
-    public hp1: number = 2
-    @property({ tooltip: '2 号敌人血量' })
-    public hp2: number = 3
-    @property({ tooltip: '3 号敌人血量' })
-    public hp3: number = 5
+    /** 这个敌人的静态数值（从 ENEMY_TABLE 按 tag 查出来） */
+    private data: EnemyData = null
+    /** 当前血量（会被子弹扣，会被时间成长放大） */
+    private hp = 0
     @property({ tooltip: '血量成长：每隔多少秒乘一次' })
     growthInterval: number = 10
     @property({ tooltip: '每次乘的系数（1.055 = 每次 +5.5%，指数成长）' })
@@ -53,30 +52,28 @@ export class Enemy extends Component {
         }, 0);
     }
     start() {
+        const col = this.getComponentInChildren(Collider2D)
+        this.data = ENEMY_TABLE[col?.tag ?? 0]
+        if (!this.data) {
+            console.warn('[Enemy] 未知敌人 tag：' + (col?.tag ?? 'null'))
+            return
+        }
+        this.hp = this.data.baseHp
         this.applyGrowth()
+
         this.phase = 'enter'
         this.stayTimer = 0
         this.fireTimer = 0
 
-        let collider = this.getComponentInChildren(Collider2D)
-        if (collider) {
-            collider.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+        if (col) {
+            col.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
         }
-        //  console.log(collider);
     }
-
-    /**
-     * 按存活时间给血量加成（出生时算一次，之后不再变）
-     * 指数成长：每 growthInterval 秒乘 growthFactor，最多 growthCap 倍
-     * 用指数而不是线性，是因为玩家的输出是乘法叠加的（弹道×伤害×射速）
-     */
     private applyGrowth() {
         const steps = Math.floor(GameStore.time / this.growthInterval)
         const mult = Math.min(this.growthCap, Math.pow(this.growthFactor, steps))
         if (mult <= 1) return
-        this.hp1 = Math.max(1, Math.round(this.hp1 * mult))
-        this.hp2 = Math.max(1, Math.round(this.hp2 * mult))
-        this.hp3 = Math.max(1, Math.round(this.hp3 * mult))
+       this.hp = Math.max(1, Math.round(this.data.baseHp * mult))
     }
 
     update(deltaTime: number) {
@@ -174,75 +171,38 @@ export class Enemy extends Component {
         // ③ 已经死了：只吃子弹，不再计算伤害
         if (this.dead) return
 
-        const n = selfCollider.tag
-        let dath: string
-        let die: string
-        switch (n) {
-            case 1:
-                dath = 'dath1'
-                die = 'hit1'
-                this.hp1 -= GameStore.bulletDamage
-                if (this.hp1 > 0) this.die(this.hp1, dath, die, n)
-                else this.die(0, dath, die, n)
-                break;
-            case 2:
-                dath = 'dath2'
-                die = 'hit2'
-                this.hp2 -= GameStore.bulletDamage
-                if (this.hp2 > 0) this.die(this.hp2, dath, die, n)
-                else this.die(0, dath, die, n)
-                break
-            case 3:
-                dath = 'dath3'
-                die = 'hit3'
-                this.hp3 -= GameStore.bulletDamage
-                if (this.hp3 > 0) this.die(this.hp3, dath, die, n)
-                else this.die(0, dath, die, n)
-                break
-        }
+
+               // ③ 命中：扣血，没死播受击，死了走死亡流程
+        this.hp = Math.max(0, this.hp - GameStore.bulletDamage)
+        if (this.hp > 0) this.hurt()
+        else this.die()
     }
     kill() {
-        if (this.dead) return;
-        const tag = this.getComponentInChildren(Collider2D)?.tag;
-        let dath = 'dath1', die = 'hit1';
-        if (tag === 2) { dath = 'dath2'; die = 'hit2'; }
-        if (tag === 3) { dath = 'dath3'; die = 'hit3'; }
-        this.die(0, dath, die, tag);
+        this.die()
     }
-    die(num: number, dath, die, n: number) {
-        if (num <= 0) {
-            this.dead = true;
-            AudioMgr.I?.enemyDeath()
-
-            // 下一帧摘掉碰撞体：尸体不再挡子弹，也不会再撞掉玩家的血
-            // 不能直接写 col.enabled = false —— 在物理回调里销毁 fixture 有崩溃风险
-            this.scheduleOnce(() => {
-                const col = this.getComponentInChildren(Collider2D);
-                if (col && col.isValid) col.enabled = false;
-            }, 0);
-
-            this.anim.play(dath)
-            this.anim.once(Animation.EventType.FINISHED, () => { this.safeDestroy(this.node) }, this)
-
-            // 掉落交给 EnemyManagers 统一处理（按敌人类型数击杀数）
-            const mgr: any = find('Canvas/EnemyManagers')?.getComponent('EnemyManagers');
-            mgr?.onEnemyKilled(n);
-
-            this.sendValue(n)
-
-
-        } else {
-            this.anim.play(die)
-            AudioMgr.I?.enemyHit()
-        }
+     /** 受击：播动画 + 响一声，不动血量判定 */
+    private hurt() {
+        this.anim.play(this.data.hitAnim)
+        AudioMgr.I?.enemyHit()
     }
-    sendValue(n: number) {
 
-        switch (n) {
-            case 1: GameStore.df += 10; break;
-            case 2: GameStore.df += 30; break;
-            case 3: GameStore.df += 50; break;
-        }
+    /** 死亡：动画、音效、掉落、加分、销毁 */
+    private die() {
+        if (this.dead) return
+        this.dead = true
+        AudioMgr.I?.enemyDeath()
 
+        this.scheduleOnce(() => {
+            const col = this.getComponentInChildren(Collider2D)
+            if (col && col.isValid) col.enabled = false
+        }, 0)
+
+        this.anim.play(this.data.deathAnim)
+        this.anim.once(Animation.EventType.FINISHED, () => { this.safeDestroy(this.node) }, this)
+
+        const mgr: any = find('Canvas/EnemyManagers')?.getComponent('EnemyManagers')
+        mgr?.onEnemyKilled(this.data.tag)
+
+        GameStore.df += this.data.score
     }
 }
