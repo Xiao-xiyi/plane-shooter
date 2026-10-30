@@ -1,10 +1,10 @@
-import { _decorator, Animation, Canvas, Collider, Collider2D, Component, Contact2DType, director, EventTouch, find, Input, input, instantiate, log, math, Node, Prefab, Vec3, warnID } from 'cc';
+import { _decorator, Animation, Canvas, Collider, Collider2D, Component, Contact2DType, director, EventTouch, find, Input, input, log, math, Node, Prefab, Vec3, warnID } from 'cc';
 const { ccclass, property } = _decorator;
 import { GameStore } from './GameStore';
 import { Bus, Evt } from './GameEvent';
 import { HpBar } from './HpBar';
 import { AudioMgr } from './AudioMgr';
-
+import { getNode, putNode } from './pool';
 
 @ccclass('player')
 export class player extends Component {
@@ -153,7 +153,7 @@ export class player extends Component {
         if (t === 6) {                       // 敌弹
             this.takeDamage(1)
             const b = otherCollider.node
-            this.scheduleOnce(() => { if (b && b.isValid) b.destroy() }, 0)
+                       this.scheduleOnce(() => putNode(b), 0)
             return
         }
         if (t !== 1 && t !== 2 && t !== 3) return
@@ -286,7 +286,7 @@ export class player extends Component {
         for (const spot of spots) {
             const prefab = spot.isCenter ? this.bullet1Prefab : this.bullet2Prefab
             if (!prefab) continue
-            const b = instantiate(prefab)
+                      const b = getNode(prefab)
             this.bullets.addChild(b)
             b.setWorldPosition(spot.pos)
         }

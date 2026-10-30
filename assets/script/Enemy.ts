@@ -1,8 +1,9 @@
-import { _decorator, Animation, animation, AnimationClip, Collider2D, Component, Contact2DType, instantiate, Label, log, Node, Prefab } from 'cc';
+import { _decorator, Animation, animation, AnimationClip, Collider2D, Component, Contact2DType, Label, log, Node, Prefab } from 'cc';
 import { GameStore } from './GameStore';
 import { AudioMgr } from './AudioMgr';
 import { ENEMY_TABLE, EnemyData } from './EnemyConfig';
 import { Bus, Evt } from './GameEvent';
+import { getNode, putNode } from './pool';
 const { ccclass, property } = _decorator;
 
 
@@ -143,7 +144,7 @@ export class Enemy extends Component {
         const parent = this.node.parent
         if (!parent || !parent.isValid) return
 
-        const b = instantiate(this.enemyBulletPrefab)
+               const b = getNode(this.enemyBulletPrefab)
         parent.addChild(b)
         b.setWorldPosition(this.node.worldPosition)
     }
@@ -157,12 +158,7 @@ export class Enemy extends Component {
         //    敌人一旦销毁，它身上的调度器跟着没了，回调就不会执行，子弹会永远留着
         //    【穿透弹】强化生效期间，子弹不吃掉，可以继续往后打
         if (otherCollider.tag !== 4 && GameStore.pierceTime <= 0) {
-            setTimeout(() => {
-                if (bulletNode && bulletNode.isValid) {
-                    bulletNode.active = false
-                    bulletNode.destroy()
-                }
-            }, 0)
+                       setTimeout(() => putNode(bulletNode), 0)
         }
 
         // ② 撞上来的是玩家（tag 4）：玩家掉血，但敌人不掉血，直接返回
