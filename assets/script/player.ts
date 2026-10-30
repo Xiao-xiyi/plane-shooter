@@ -1,17 +1,17 @@
 import { _decorator, Animation, Canvas, Collider, Collider2D, Component, Contact2DType, director, EventTouch, find, Input, input, instantiate, log, math, Node, Prefab, Vec3, warnID } from 'cc';
 const { ccclass, property } = _decorator;
 import { GameStore } from './GameStore';
-import { Enemy } from './Enemy';
+import { Bus, Evt } from './GameEvent';
 import { HpBar } from './HpBar';
 import { AudioMgr } from './AudioMgr';
 
 
 @ccclass('player')
 export class player extends Component {
- 
 
 
-    
+
+
     @property
     invincibleTime: number = 1
 
@@ -39,7 +39,7 @@ export class player extends Component {
     minShootRate: number = 0.18;
     @property({ tooltip: '单发伤害上限（吃满强化后的最高伤害）' })
     maxBulletDamage: number = 3;
-    public gameTime:number=0
+    public gameTime: number = 0
     @property(Node)
     hpBar: Node = null;
 
@@ -58,16 +58,20 @@ export class player extends Component {
         }
         return this._hpBarComp;
     }
-    
+
 
     takeDamage(n: number = 1) {
-    if (this.s || this.shieldActive) return;
-    this.hp = Math.max(0, this.hp - n);
-    GameStore.hp = this.hp;                       // 同步给掉落逻辑
-    this.getHpBar()?.damage(n, this.maxHp);
-    if (this.hp <= 0) { this.s = true; this.playerdeath(); }
-    else this.playerhit();
-}
+        if (this.s || this.shieldActive) return;
+        this.hp = Math.max(0, this.hp - n);
+        GameStore.hp = this.hp;                       // 同步给掉落逻辑
+        this.getHpBar()?.damage(n, this.maxHp);
+        if (this.hp <= 0) { this.s = true; this.playerdeath(); }
+        else this.playerhit();
+    }
+        /** 有敌人漏过防线：扣一滴血 */
+    private onEnemyEscaped() {
+        this.takeDamage(1)
+    }
     outs(name) {
         // 回血用专属音效，其它道具用通用拾取音
         if (name === 'heal') AudioMgr.I?.heal()
@@ -91,13 +95,8 @@ export class player extends Component {
                 GameStore.bulletCount = Math.min(GameStore.bulletCount + 1, 4)
                 break
             case 'clear':
-                const container = find('Canvas/EnemyManagers')
-                if (!container) break;
-
-                [...container.children].forEach(n => {
-                    n.getComponent(Enemy)?.kill();
-                });
-                break;
+                Bus.emit(Evt.ClearScreen)
+                break
             case 'shield': {
                 const anim = this.getComponentInChildren(Animation);
                 this.shieldActive = true;
@@ -105,7 +104,7 @@ export class player extends Component {
                 this.unschedule(this.frame)
                 this.scheduleOnce(this.frame, 10)
                 break;
-                
+
             }
 
 
@@ -119,12 +118,13 @@ export class player extends Component {
     }
 
     protected start(): void {
-
+        Bus.on(Evt.EnemyEscaped, this.onEnemyEscaped, this)
         let collider = this.getComponentInChildren(Collider2D)
         if (collider) {
             collider.on(Contact2DType.BEGIN_CONTACT, this.onBEginContact, this)
 
         }
+        
         this.getHpBar()?.setHp(this.hp, this.maxHp);
         GameStore.pierceTime = 0;      // 新一局清掉上一局的强化状态
         GameStore.bulletDamage = 1;
@@ -161,17 +161,17 @@ export class player extends Component {
 
     }
     playerdeath() {
-        GameStore.isover=true
+        GameStore.isover = true
         AudioMgr.I?.playerDeath()
         const anim = this.getComponentInChildren(Animation);
         if (anim) {
             anim.play('player-death');
             anim.once(Animation.EventType.FINISHED, () => {
-                
+
                 director.loadScene('scene');
-            
+
             }, this);
-            
+
         } else {
             director.loadScene('scene');
         }
@@ -217,6 +217,7 @@ export class player extends Component {
     }
     protected onDestroy(): void {
         input.off(Input.EventType.TOUCH_MOVE, this.onTouchMOve, this)
+           Bus.off(Evt.EnemyEscaped, this.onEnemyEscaped, this) 
     }
     protected update(dt: number): void {
         // 生存时间只累加数字，格式化交给 formatTime()

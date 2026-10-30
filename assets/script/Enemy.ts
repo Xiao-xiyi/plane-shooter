@@ -1,8 +1,8 @@
-import { _decorator, Animation, animation, AnimationClip, Collider2D, Component, Contact2DType, find, instantiate, Label, log, Node, Prefab } from 'cc';
+import { _decorator, Animation, animation, AnimationClip, Collider2D, Component, Contact2DType, instantiate, Label, log, Node, Prefab } from 'cc';
 import { GameStore } from './GameStore';
 import { AudioMgr } from './AudioMgr';
-import { player } from './player';
 import { ENEMY_TABLE, EnemyData } from './EnemyConfig';
+import { Bus, Evt } from './GameEvent';
 const { ccclass, property } = _decorator;
 
 
@@ -73,7 +73,7 @@ export class Enemy extends Component {
         const steps = Math.floor(GameStore.time / this.growthInterval)
         const mult = Math.min(this.growthCap, Math.pow(this.growthFactor, steps))
         if (mult <= 1) return
-       this.hp = Math.max(1, Math.round(this.data.baseHp * mult))
+        this.hp = Math.max(1, Math.round(this.data.baseHp * mult))
     }
 
     update(deltaTime: number) {
@@ -124,7 +124,7 @@ export class Enemy extends Component {
         const nextY = p.y - this.speed * dt
         this.node.setPosition(p.x, nextY, p.z)
         if (nextY < -450) {
-            find('Canvas/player')?.getComponent(player)?.takeDamage(1);
+            Bus.emit(Evt.EnemyEscaped)
             this.safeDestroy(this.node);
         }
     }
@@ -172,7 +172,7 @@ export class Enemy extends Component {
         if (this.dead) return
 
 
-               // ③ 命中：扣血，没死播受击，死了走死亡流程
+        // ③ 命中：扣血，没死播受击，死了走死亡流程
         this.hp = Math.max(0, this.hp - GameStore.bulletDamage)
         if (this.hp > 0) this.hurt()
         else this.die()
@@ -180,7 +180,7 @@ export class Enemy extends Component {
     kill() {
         this.die()
     }
-     /** 受击：播动画 + 响一声，不动血量判定 */
+    /** 受击：播动画 + 响一声，不动血量判定 */
     private hurt() {
         this.anim.play(this.data.hitAnim)
         AudioMgr.I?.enemyHit()
@@ -200,8 +200,7 @@ export class Enemy extends Component {
         this.anim.play(this.data.deathAnim)
         this.anim.once(Animation.EventType.FINISHED, () => { this.safeDestroy(this.node) }, this)
 
-        const mgr: any = find('Canvas/EnemyManagers')?.getComponent('EnemyManagers')
-        mgr?.onEnemyKilled(this.data.tag)
+        Bus.emit(Evt.EnemyKilled, this.data.tag)
 
         GameStore.df += this.data.score
     }

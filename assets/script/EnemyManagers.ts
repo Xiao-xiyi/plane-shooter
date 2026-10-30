@@ -1,7 +1,8 @@
 import { _decorator, CCFloat, Component, instantiate, log, Node, Prefab, view } from 'cc';
 const { ccclass, property } = _decorator;
 import { GameStore } from './GameStore';
-
+import { Enemy } from './Enemy';
+import { Bus, Evt } from './GameEvent';
 @ccclass('EnemyManagers')
 export class EnemyManagers extends Component {
 
@@ -46,12 +47,15 @@ export class EnemyManagers extends Component {
     enemy9Prefab: Prefab = null
     @property(Prefab)
     enemy10Prefab: Prefab = null
+       protected onDestroy(): void {
+        Bus.off(Evt.EnemyKilled, this.onEnemyKilled, this)
+        Bus.off(Evt.ClearScreen, this.onClearScreen, this)
+    }
     start() {
+     Bus.on(Evt.EnemyKilled, this.onEnemyKilled, this)
+        Bus.on(Evt.ClearScreen, this.onClearScreen, this)
+    }
 
-    }
-    protected onDestroy(): void {
-     
-    }
     update(deltaTime: number) {
         this._elapsed += deltaTime
 
@@ -66,7 +70,11 @@ export class EnemyManagers extends Component {
         this._timer = 0
         this.spawnOne(t)
     }
-
+    private onClearScreen() {
+        for (const n of [...this.node.children]) {
+            n.getComponent(Enemy)?.kill()
+        }
+    }
     /** 按当前权重抽一种敌人刷出来 */
     private spawnOne(t: number) {
         // 权重从 weightStart 线性过渡到 weightEnd
